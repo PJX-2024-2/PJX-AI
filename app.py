@@ -3,9 +3,17 @@ import os
 
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
 load_dotenv()
+
+# CORS 설정: 두 URL을 허용
+CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "https://pjx-client-4bsx.vercel.app"]}})
+
+@app.route('/')
+def home():
+    return "Hello, World!"
 
 @app.route('/health', methods=['GET'])
 def health_check():
