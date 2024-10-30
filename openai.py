@@ -1,11 +1,13 @@
-import requests
-import uuid
-import json
+import cv2
+import numpy as np
 import os
 import sys
 import time
 import mimetypes
+import uuid
+import json
 import logging
+import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 
@@ -24,7 +26,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def validate_image_path(image_path):
-
     if not os.path.isfile(image_path):
         logger.error(f"파일이 존재하지 않습니다: {image_path}")
         return False
@@ -34,42 +35,115 @@ def validate_image_path(image_path):
         return False
     return True
 
-def perform_ocr(api_url, secret_key, image_info, session, timeout=20):
+def preprocess_receipt_image(image_path):
+    # 1. 이미지 로드
+    image = cv2.imread(image_path)
+    if image is None:
+        logger.error(f"이미지를 {image_path}에서 불러올 수 없습니다.")
+        return None
 
+    # 원본 이미지 복사
+    original = image.copy()
+
+    # 2. 그레이스케일 변환
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # 3. 모폴리지 닫기 연산으로 노이즈 제거 및 그림자 완화
+    img_height, img_width = gray.shape
+    kernel_size = max(5, int(img_width * 0.02))
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
+    closed = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+    # 4. 그림자 제거를 위한 배경 추정 및 차감
+    background = cv2.GaussianBlur(closed, (15, 15), 0)
+    diff = cv2.absdiff(gray, background)
+
+    # 5. 정규화하여 명암 대비 향상
+    norm = cv2.normalize(diff, None, 0, 255, cv2.NORM_MINMAX)
+
+    # 6. 노이즈 제거
+    blurred = cv2.GaussianBlur(norm, (5, 5), 0)
+
+    # 7. 이진화 (Otsu Thresholding 고정)
+    _, thresh = cv2.threshold(
+        blurred,
+        0,
+        255,
+        cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+
+    # 8. 팽창을 통해 텍스트 선명화
+    kernel_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    processed = cv2.dilate(thresh, kernel_dilate, iterations=1)  
+
+    return processed
+
+def perform_ocr(api_url, secret_key, image_info, session, timeout=20):
+    """
+    OCR API를 호출하여 이미지에서 텍스트를 추출합니다.
+
+    Parameters:
+    - api_url: OCR API의 URL
+    - secret_key: OCR API의 시크릿 키
+    - image_info: (image_type, image_path) 튜플
+    - session: requests 세션 객체
+    - timeout: 요청 타임아웃 시간
+
+    Returns:
+    - image_type: 이미지 유형 (예: '영수증1')
+    - text_results: 추출된 텍스트
+    """
     image_type, image_path = image_info
     if not validate_image_path(image_path):
         return image_type, ""
 
     try:
-        with open(image_path, 'rb') as image_file:
-            mime_type, _ = mimetypes.guess_type(image_path)
-            format_type = mime_type.split('/')[-1] if mime_type else 'jpg'
-            unique_name = f"{image_type}_{uuid.uuid4()}.{format_type}"
-            
-            request_json = {
-                'images': [{'format': format_type, 'name': unique_name}],
-                'requestId': str(uuid.uuid4()),
-                'version': 'V2',
-                'timestamp': int(round(time.time() * 1000))  
-            }
-            payload = {'message': json.dumps(request_json).encode('UTF-8')}
-            files = {'file': (unique_name, image_file, mime_type)}
-            headers = {'X-OCR-SECRET': secret_key}
+        # 이미지 전처리
+        processed_image = preprocess_receipt_image(image_path)
+        if processed_image is None:
+            logger.error(f"전처리 실패: {image_path}")
+            return image_type, ""
 
-            response = session.post(api_url, headers=headers, data=payload, files=files, timeout=timeout)
+        # 전처리된 이미지를 메모리 버퍼로 인코딩
+        success, encoded_image = cv2.imencode('.png', processed_image)
+        if not success:
+            logger.error(f"이미지 인코딩 실패: {image_path}")
+            return image_type, ""
 
-            if response.status_code == 200:
-                ocr_result = response.json()
-                text_results = " ".join([
-                    field['inferText'] 
-                    for image in ocr_result.get('images', []) 
-                    for field in image.get('fields', [])
-                ])
-                logger.info(f"OCR 성공: {image_type}에서 텍스트 추출 완료.")
-                return image_type, text_results
-            else:
-                logger.error(f"OCR 요청 실패: {image_type}, 상태 코드 {response.status_code}, 응답 내용: {response.text}")
-                return image_type, ""
+        # 인코딩된 이미지를 바이트로 변환
+        image_bytes = encoded_image.tobytes()
+
+        # MIME 타입 설정
+        mime_type, _ = mimetypes.guess_type(image_path)
+        format_type = mime_type.split('/')[-1] if mime_type else 'png'
+        unique_name = f"{image_type}_{uuid.uuid4()}.{format_type}"
+
+        # OCR API 요청 JSON 설정
+        request_json = {
+            'images': [{'format': format_type, 'name': unique_name}],
+            'requestId': str(uuid.uuid4()),
+            'version': 'V2',
+            'timestamp': int(round(time.time() * 1000))
+        }
+        payload = {'message': json.dumps(request_json).encode('UTF-8')}
+        files = {'file': (unique_name, image_bytes, mime_type if mime_type else 'image/png')}
+        headers = {'X-OCR-SECRET': secret_key}
+
+        # OCR API 요청
+        response = session.post(api_url, headers=headers, data=payload, files=files, timeout=timeout)
+
+        if response.status_code == 200:
+            ocr_result = response.json()
+            text_results = " ".join([
+                field['inferText']
+                for image in ocr_result.get('images', [])
+                for field in image.get('fields', [])
+            ])
+            logger.info(f"OCR 성공: {image_type}에서 텍스트 추출 완료.")
+            return image_type, text_results
+        else:
+            logger.error(f"OCR 요청 실패: {image_type}, 상태 코드 {response.status_code}, 응답 내용: {response.text}")
+            return image_type, ""
     except requests.exceptions.Timeout:
         logger.error(f"OCR 요청 타임아웃: {image_type}")
     except requests.exceptions.RequestException as e:
@@ -87,7 +161,7 @@ def perform_summarization(api_url, api_key, prompt, session, timeout=25):
     data = {
         'model': 'gpt-3.5-turbo',
         'messages': [
-            {'role': 'system', 'content': 'You are a helper that organizes and summarizes data.'}, 
+            {'role': 'system', 'content': 'You are a helper that organizes and summarizes data.'},
             {'role': 'user', 'content': prompt}
         ],
         'max_tokens': 1000,
@@ -196,7 +270,7 @@ if __name__ == '__main__':
     num_images = len(image_file_paths)
     logger.debug(f"Received {num_images} image(s): {image_file_paths}")
     if not (1 <= num_images <= 3):
-        logger.error("이미지 파일 최소 1개, 최대 3개)")
+        logger.error("이미지 파일 최소 1개, 최대 3개를 입력해야 합니다.")
         sys.exit(1)
 
     main(*image_file_paths)
