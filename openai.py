@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 def validate_image_path(image_path):
 
-    #이미지 파일의 존재 여부와 지원되는 형식을 검증.
     if not os.path.isfile(image_path):
         logger.error(f"파일이 존재하지 않습니다: {image_path}")
         return False
@@ -36,8 +35,7 @@ def validate_image_path(image_path):
     return True
 
 def perform_ocr(api_url, secret_key, image_info, session, timeout=20):
-    
-    # Naver OCR API를 사용하여 이미지에서 텍스트를 추출.
+
     image_type, image_path = image_info
     if not validate_image_path(image_path):
         return image_type, ""
@@ -82,7 +80,6 @@ def perform_ocr(api_url, secret_key, image_info, session, timeout=20):
 
 def perform_summarization(api_url, api_key, prompt, session, timeout=25):
 
-    # OpenAI API를 사용하여 텍스트를 요약.
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {api_key}',
@@ -90,7 +87,7 @@ def perform_summarization(api_url, api_key, prompt, session, timeout=25):
     data = {
         'model': 'gpt-3.5-turbo',
         'messages': [
-            {'role': 'system', 'content': '당신은 데이터를 정리하고 요약하는 도우미입니다.'}, 
+            {'role': 'system', 'content': 'You are a helper that organizes and summarizes data.'}, 
             {'role': 'user', 'content': prompt}
         ],
         'max_tokens': 1000,
@@ -116,8 +113,7 @@ def perform_summarization(api_url, api_key, prompt, session, timeout=25):
     return None
 
 def main(*image_paths):
-    
-    # 메인 함수로, 이미지 파일에서 텍스트를 추출하고 요약을 수행.
+
     # OCR API 정보
     ocr_api_url = os.getenv('OCR_API_URL')
     if not ocr_api_url:
