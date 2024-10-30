@@ -192,10 +192,11 @@ def main(*image_paths):
         sys.exit(1)
 
 if __name__ == '__main__':
-    if not (1 <= len(sys.argv) <= 3):
-        logger.error("사용법: python gpt.py [이미지 파일 경로 1] [이미지 파일 경로 2] ... (최소 1개, 최대 3개)")
+    image_file_paths = sys.argv[1:]
+    num_images = len(image_file_paths)
+    logger.debug(f"Received {num_images} image(s): {image_file_paths}")
+    if not (1 <= num_images <= 3):
+        logger.error("이미지 파일 최소 1개, 최대 3개)")
         sys.exit(1)
 
-    # 명령줄 인자로 전달된 파일 경로
-    image_file_paths = sys.argv[1:]
     main(*image_file_paths)
