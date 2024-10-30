@@ -10,15 +10,34 @@ app = Flask(__name__)
 load_dotenv()
 
 # 로깅 설정
-logging.basicConfig(filename='error.log', level=logging.ERROR, 
-                    format='%(asctime)s:%(levelname)s:%(message)s')
+logging.basicConfig(
+    filename='error.log',
+    level=logging.DEBUG,
+    format='%(asctime)s:%(levelname)s:%(message)s'
+)
 
-# CORS 설정: 두 URL을 허용
-CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "https://pjx-client-4bsx.vercel.app"]}}, supports_credentials=True)
+# CORS 설정: 두 URL을 허용하고, credentials 지원 추가
+cors = CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "https://pjx-client-4bsx.vercel.app"]}}, supports_credentials=True)
 
-# 모든 응답에 CORS 헤더 추가
+# 모든 요청 전 요청 정보 로깅
+@app.before_request
+def log_request_info():
+    logging.debug(f"Request Headers: {dict(request.headers)}")
+    logging.debug(f"Request Body: {request.get_data()}")
+
+# 모든 응답에 CORS 헤더 추가 및 응답 헤더 로깅
 @app.after_request
 def add_cors_headers(response):
+    origin = request.headers.get('Origin')
+    allowed_origins = ["http://localhost:5173", "https://pjx-client-4bsx.vercel.app"]
+    if origin in allowed_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization']
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS']
+    else:
+        response.headers['Access-Control-Allow-Origin'] = 'null'
+    logging.debug(f"Response Headers: {dict(response.headers)}")
     return response
 
 @app.route('/')
@@ -28,6 +47,22 @@ def home():
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify(status='healthy'), 200
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logging.error(f"Unhandled exception: {e}", exc_info=True)
+    response = jsonify({'error': 'An unexpected error occurred', 'details': str(e)})
+    response.status_code = 500
+    # 응답 헤더에 CORS 헤더 추가
+    origin = request.headers.get('Origin')
+    allowed_origins = ["http://localhost:5173", "https://pjx-client-4bsx.vercel.app"]
+    if origin in allowed_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization']
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS']
+    logging.debug(f"Error Response Headers: {dict(response.headers)}")
+    return response
 
 @app.route('/api/v1/receipt/analyze', methods=['POST'])
 def process_request():
@@ -63,7 +98,8 @@ def process_request():
         # openai.py 실행, 입력 이미지 경로 전달
         try:
             result = subprocess.check_output(['python3', 'openai.py'] + list(image_paths.values()), stderr=subprocess.STDOUT)
-            return jsonify({'result': result.decode('utf-8')}), 200
+            result_data = result.decode('utf-8')
+            return jsonify({'result': result_data}), 200
         except subprocess.CalledProcessError as e:
             logging.error(f"Subprocess error: {e.output.decode('utf-8')}")
             return jsonify({'error': 'Error processing images', 'details': e.output.decode('utf-8')}), 500
@@ -75,6 +111,5 @@ def process_request():
         logging.error(f"Unhandled exception: {err}", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred', 'details': str(err)}), 500
 
-# 애플리케이션 실행
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
