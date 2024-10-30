@@ -10,35 +10,32 @@ app = Flask(__name__)
 load_dotenv()
 
 # 로깅 설정
-logging.basicConfig(
-    filename='error.log',
-    level=logging.DEBUG,
-    format='%(asctime)s:%(levelname)s:%(message)s'
-)
+log_file = 'error.log'  # 로그 파일 경로
+if not os.path.exists(log_file):
+    open(log_file, 'a').close()
 
-# CORS 설정: 두 URL을 허용하고, credentials 지원 추가
-cors = CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "https://pjx-client-4bsx.vercel.app"]}}, supports_credentials=True)
+file_handler = logging.FileHandler(log_file)
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+file_handler.setFormatter(formatter)
 
-# 모든 요청 전 요청 정보 로깅
+app.logger.addHandler(file_handler)
+app.logger.setLevel(logging.DEBUG)
+
+# CORS 설정: 두 URL을 허용
+cors = CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "http://localhost:5173",
+            "https://pjx-client-4bsx.vercel.app"
+        ]
+    }
+}, supports_credentials=True)
+
 @app.before_request
 def log_request_info():
-    logging.debug(f"Request Headers: {dict(request.headers)}")
-    logging.debug(f"Request Body: {request.get_data()}")
-
-# 모든 응답에 CORS 헤더 추가 및 응답 헤더 로깅
-@app.after_request
-def add_cors_headers(response):
-    origin = request.headers.get('Origin')
-    allowed_origins = ["http://localhost:5173", "https://pjx-client-4bsx.vercel.app"]
-    if origin in allowed_origins:
-        response.headers['Access-Control-Allow-Origin'] = origin
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization']
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS']
-    else:
-        response.headers['Access-Control-Allow-Origin'] = 'null'
-    logging.debug(f"Response Headers: {dict(response.headers)}")
-    return response
+    app.logger.debug(f"Request Headers: {dict(request.headers)}")
+    app.logger.debug(f"Request Body: {request.get_data()}")
 
 @app.route('/')
 def home():
@@ -50,18 +47,11 @@ def health_check():
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    logging.error(f"Unhandled exception: {e}", exc_info=True)
+    app.logger.error(f"Unhandled exception: {e}", exc_info=True)
     response = jsonify({'error': 'An unexpected error occurred', 'details': str(e)})
     response.status_code = 500
-    # 응답 헤더에 CORS 헤더 추가
-    origin = request.headers.get('Origin')
-    allowed_origins = ["http://localhost:5173", "https://pjx-client-4bsx.vercel.app"]
-    if origin in allowed_origins:
-        response.headers['Access-Control-Allow-Origin'] = origin
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization']
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS']
-    logging.debug(f"Error Response Headers: {dict(response.headers)}")
+    # CORS 헤더는 Flask-CORS가 자동으로 처리하므로 수동 설정 제거
+    app.logger.debug(f"Error Response Headers: {dict(response.headers)}")
     return response
 
 @app.route('/api/v1/receipt/analyze', methods=['POST'])
@@ -69,18 +59,18 @@ def process_request():
     try:
         # 파일 유무 확인
         if 'files' not in request.files:
-            logging.error('No files part in the request')
+            app.logger.error('No files part in the request')
             return jsonify({'error': 'No files part'}), 400
 
         # 파일 리스트 확인
         files = request.files.getlist('files')
         if not files:
-            logging.error('No selected files in the request')
+            app.logger.error('No selected files in the request')
             return jsonify({'error': 'No selected files'}), 400
 
         # 파일 개수 제한 확인
         if len(files) > 3:
-            logging.error('More than 3 files uploaded')
+            app.logger.error('More than 3 files uploaded')
             return jsonify({'error': 'Maximum 3 files allowed'}), 400
 
         image_paths = {}
@@ -88,7 +78,7 @@ def process_request():
 
         for idx, file in enumerate(files, start=1):
             if file.filename == '':
-                logging.error('One of the files has no filename')
+                app.logger.error('One of the files has no filename')
                 return jsonify({'error': 'One of the files has no filename'}), 400
             file_path = os.path.join(temp_dir, f'image_{idx}_{file.filename}')
             file.save(file_path)
@@ -99,16 +89,17 @@ def process_request():
         try:
             result = subprocess.check_output(['python3', 'openai.py'] + list(image_paths.values()), stderr=subprocess.STDOUT)
             result_data = result.decode('utf-8')
+            app.logger.debug(f"Subprocess result: {result_data}")
             return jsonify({'result': result_data}), 200
         except subprocess.CalledProcessError as e:
-            logging.error(f"Subprocess error: {e.output.decode('utf-8')}")
+            app.logger.error(f"Subprocess error: {e.output.decode('utf-8')}")
             return jsonify({'error': 'Error processing images', 'details': e.output.decode('utf-8')}), 500
         except Exception as e:
-            logging.error(f"Unexpected error in subprocess: {e}")
+            app.logger.error(f"Unexpected error in subprocess: {e}")
             return jsonify({'error': 'Unexpected error occurred during image processing', 'details': str(e)}), 500
 
     except Exception as err:
-        logging.error(f"Unhandled exception: {err}", exc_info=True)
+        app.logger.error(f"Unhandled exception: {err}", exc_info=True)
         return jsonify({'error': 'An unexpected error occurred', 'details': str(err)}), 500
 
 if __name__ == '__main__':
