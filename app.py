@@ -50,7 +50,6 @@ def handle_exception(e):
     app.logger.error(f"Unhandled exception: {e}", exc_info=True)
     response = jsonify({'error': 'An unexpected error occurred', 'details': str(e)})
     response.status_code = 500
-    # CORS 헤더는 Flask-CORS가 자동으로 처리하므로 수동 설정 제거
     app.logger.debug(f"Error Response Headers: {dict(response.headers)}")
     return response
 
