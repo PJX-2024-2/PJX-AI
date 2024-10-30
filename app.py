@@ -9,7 +9,7 @@ app = Flask(__name__)
 load_dotenv()
 
 # CORS 설정: 두 URL을 허용
-CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "https://pjx-client-4bsx.vercel.app"]}})
+CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "https://pjx-client-4bsx.vercel.app"]}}, supports_credentials=True)
 
 @app.route('/')
 def home():
