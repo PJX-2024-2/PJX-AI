@@ -1,7 +1,8 @@
 import subprocess
 import os
 import logging
-
+import json
+from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -84,9 +85,9 @@ def process_request():
             image_type = f'영수증{idx}'
             image_paths[image_type] = file_path
 
-        # openai.py 실행, 입력 이미지 경로 전달
+        # receipt_ocr.py 실행, 입력 이미지 경로 전달
         try:
-            result = subprocess.check_output(['python3', 'openai.py'] + list(image_paths.values()), stderr=subprocess.STDOUT)
+            result = subprocess.check_output(['python3', 'receipt_ocr.py'] + list(image_paths.values()), stderr=subprocess.STDOUT)
             result_data = result.decode('utf-8')
             app.logger.debug(f"Subprocess result: {result_data}")
             return jsonify({'result': result_data}), 200
@@ -96,6 +97,42 @@ def process_request():
         except Exception as e:
             app.logger.error(f"Unexpected error in subprocess: {e}")
             return jsonify({'error': 'Unexpected error occurred during image processing', 'details': str(e)}), 500
+
+    except Exception as err:
+        app.logger.error(f"Unhandled exception: {err}", exc_info=True)
+        return jsonify({'error': 'An unexpected error occurred', 'details': str(err)}), 500
+
+@app.route('/api/v1/spending/analyze', methods=['POST'])
+def analyze_spending():
+
+    try:
+        data = request.json
+        kakao_id = data.get("kakao_id")
+        user_id = data.get("user_id")
+
+        if not kakao_id or not user_id:
+            app.logger.error("필수 파라미터가 누락되었습니다.")
+            return jsonify({'error': '필수 파라미터가 누락되었습니다. kakao_id와 user_id를 확인하세요.'}), 400
+
+        # 현재 날짜 기준 월 계산
+        current_month = datetime.now().month
+
+        # analyze.py 실행, 입력 파라미터 전달
+        try:
+            result = subprocess.check_output(
+                ['python3', 'analyze.py', str(kakao_id), str(current_month), str(user_id)],
+                stderr=subprocess.STDOUT
+            )
+            result_data = result.decode('utf-8')
+            analysis_result = json.loads(result_data)
+            app.logger.debug(f"Subprocess result: {result_data}")
+            return jsonify(analysis_result), 200
+        except subprocess.CalledProcessError as e:
+            app.logger.error(f"Subprocess error: {e.output.decode('utf-8')}")
+            return jsonify({'error': 'Error processing analysis', 'details': e.output.decode('utf-8')}), 500
+        except Exception as e:
+            app.logger.error(f"Unexpected error in subprocess: {e}")
+            return jsonify({'error': 'Unexpected error occurred during spending analysis', 'details': str(e)}), 500
 
     except Exception as err:
         app.logger.error(f"Unhandled exception: {err}", exc_info=True)
