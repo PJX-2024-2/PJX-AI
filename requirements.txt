@@ -1,5 +1,10 @@
 Flask
-Flask-Cors
+flask-cors
 python-dotenv
 requests
 gunicorn
+pymysql
+openai
+pandas
+opencv-python
+numpy
