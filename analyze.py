@@ -2,13 +2,15 @@ import pymysql
 import os
 import openai
 import pandas as pd
-from dotenv import load_dotenv
 import json
 import logging
 import time
 import re
+
+from dotenv import load_dotenv
 from decimal import Decimal
 from datetime import datetime
+import argparse
 
 # 환경 변수 로드
 load_dotenv()
@@ -216,9 +218,19 @@ class DecimalEncoder(json.JSONEncoder):
 
 def main():
     """주요 실행 함수."""
+    parser = argparse.ArgumentParser(description='지출 분석 스크립트')
+    parser.add_argument('kakao_id', type=int, help='카카오 ID')
+    parser.add_argument('current_month', type=int, help='현재 월 (1-12)')
+    parser.add_argument('user_id', type=int, help='사용자 ID')
+
+    args = parser.parse_args()
+    kakao_id = args.kakao_id
+    current_month = args.current_month
+    user_id = args.user_id
+
     # 지출 데이터 가져오기
     try:
-        df = fetch_spending_data(kakao_id=1999, month=11)
+        df = fetch_spending_data(kakao_id=kakao_id, month=current_month)
     except Exception:
         logging.error("지출 데이터를 가져오는 데 실패했습니다.")
         return
@@ -228,7 +240,6 @@ def main():
         return
 
     # 월간 목표 금액 가져오기
-    user_id = 11
     try:
         monthly_goal = fetch_monthly_goal(user_id)
     except Exception:
@@ -260,7 +271,6 @@ def main():
     # 분석 결과 출력
     if analysis:
         try:
-            print("지출 분석 결과:")
             print(json.dumps(analysis, indent=4, ensure_ascii=False, cls=DecimalEncoder))
         except TypeError as te:
             logging.error(f"JSON 직렬화 오류: {te}")

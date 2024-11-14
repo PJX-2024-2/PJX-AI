@@ -104,7 +104,6 @@ def process_request():
 
 @app.route('/api/v1/spending/analyze', methods=['POST'])
 def analyze_spending():
-
     try:
         data = request.json
         kakao_id = data.get("kakao_id")
@@ -116,22 +115,31 @@ def analyze_spending():
 
         # 현재 날짜 기준 월 계산
         current_month = datetime.now().month
+        app.logger.debug(f"Current month determined as: {current_month}")
 
         # analyze.py 실행, 입력 파라미터 전달
         try:
+            command = ['python3', 'analyze.py', str(kakao_id), str(current_month), str(user_id)]
+            app.logger.debug(f"Executing command: {' '.join(command)}")
             result = subprocess.check_output(
-                ['python3', 'analyze.py', str(kakao_id), str(current_month), str(user_id)],
+                command,
                 stderr=subprocess.STDOUT
             )
             result_data = result.decode('utf-8')
-            analysis_result = json.loads(result_data)
             app.logger.debug(f"Subprocess result: {result_data}")
+            analysis_result = json.loads(result_data)
+            app.logger.debug(f"Analysis result JSON: {analysis_result}")
             return jsonify(analysis_result), 200
         except subprocess.CalledProcessError as e:
-            app.logger.error(f"Subprocess error: {e.output.decode('utf-8')}")
-            return jsonify({'error': 'Error processing analysis', 'details': e.output.decode('utf-8')}), 500
+            error_output = e.output.decode('utf-8')
+            app.logger.error(f"Subprocess error: {error_output}")
+            return jsonify({'error': 'Error processing analysis', 'details': error_output}), 500
+        except json.JSONDecodeError as e:
+            app.logger.error(f"JSON decode error: {e}")
+            app.logger.debug(f"Result data: {result_data}")
+            return jsonify({'error': 'Invalid JSON response from analysis script', 'details': str(e)}), 500
         except Exception as e:
-            app.logger.error(f"Unexpected error in subprocess: {e}")
+            app.logger.error(f"Unexpected error in subprocess: {e}", exc_info=True)
             return jsonify({'error': 'Unexpected error occurred during spending analysis', 'details': str(e)}), 500
 
     except Exception as err:
