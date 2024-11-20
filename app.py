@@ -106,12 +106,11 @@ def process_request():
 def analyze_spending():
     try:
         data = request.json
-        kakao_id = data.get("kakao_id")
         user_id = data.get("user_id")
 
-        if not kakao_id or not user_id:
+        if not user_id:
             app.logger.error("필수 파라미터가 누락되었습니다.")
-            return jsonify({'error': '필수 파라미터가 누락되었습니다. kakao_id와 user_id를 확인하세요.'}), 400
+            return jsonify({'error': '필수 파라미터가 누락되었습니다. user_id를 확인하세요.'}), 400
 
         # 현재 날짜 기준 월 계산
         current_month = datetime.now().month
@@ -119,14 +118,13 @@ def analyze_spending():
 
         # analyze.py 실행, 입력 파라미터 전달
         try:
-            command = ['python3', 'analyze.py', str(kakao_id), str(current_month), str(user_id)]
+            command = ['python3', 'analyze.py', str(user_id), str(current_month)]
             app.logger.debug(f"Executing command: {' '.join(command)}")
             result = subprocess.check_output(
                 command,
                 stderr=subprocess.STDOUT
             )
             result_data = result.decode('utf-8')
-            app.logger.debug(f"Subprocess result: {result_data}")
             analysis_result = json.loads(result_data)
             app.logger.debug(f"Analysis result JSON: {analysis_result}")
             return jsonify(analysis_result), 200

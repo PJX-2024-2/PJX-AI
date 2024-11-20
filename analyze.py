@@ -42,18 +42,18 @@ db_config = {
     'cursorclass': pymysql.cursors.DictCursor
 }
 
-def fetch_spending_data(kakao_id, month):
-    """특정 kakao_id와 월의 지출 데이터를 가져옵니다."""
-    logging.debug(f"Fetching spending data for kakao_id={kakao_id}, month={month}")
+def fetch_spending_data(user_id, month):
+    """특정 user_id와 월의 지출 데이터를 가져옵니다."""
+    logging.debug(f"Fetching spending data for user_id={user_id}, month={month}")
     sql = """
         SELECT id, description, amount
         FROM spending
-        WHERE kakao_id = %s AND MONTH(date) = %s
+        WHERE user_id = %s AND MONTH(date) = %s
     """
     try:
         with pymysql.connect(**db_config) as connection:
             with connection.cursor() as cursor:
-                cursor.execute(sql, (kakao_id, month))
+                cursor.execute(sql, (user_id, month))
                 results = cursor.fetchall()
         df = pd.DataFrame(results)
         logging.info("지출 데이터를 성공적으로 가져왔습니다.")
@@ -229,20 +229,18 @@ class DecimalEncoder(json.JSONEncoder):
 def main():
     """주요 실행 함수."""
     parser = argparse.ArgumentParser(description='지출 분석 스크립트')
-    parser.add_argument('kakao_id', type=int, help='카카오 ID')
-    parser.add_argument('current_month', type=int, help='현재 월 (1-12)')
     parser.add_argument('user_id', type=int, help='사용자 ID')
+    parser.add_argument('current_month', type=int, help='현재 월 (1-12)')
 
     args = parser.parse_args()
-    kakao_id = args.kakao_id
-    current_month = args.current_month
     user_id = args.user_id
+    current_month = args.current_month
 
-    logging.info(f"Starting analysis for kakao_id={kakao_id}, current_month={current_month}, user_id={user_id}")
+    logging.info(f"Starting analysis for user_id={user_id}, current_month={current_month}")
 
     # 지출 데이터 가져오기
     try:
-        df = fetch_spending_data(kakao_id=kakao_id, month=current_month)
+        df = fetch_spending_data(user_id=user_id, month=current_month)
     except Exception as e:
         logging.error("지출 데이터를 가져오는 데 실패했습니다.", exc_info=True)
         print(json.dumps({'error': 'Failed to fetch spending data'}, ensure_ascii=False))
