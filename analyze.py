@@ -95,7 +95,7 @@ def categorize_products(product_names, batch_size=20):
     for i in range(0, len(unique_names), batch_size):
         batch = unique_names[i:i+batch_size]
         prompt = (
-            "다음은 다양한 상품명 리스트입니다. 각 상품명을 '식품', '생활용품', '주류', '기타' 중 하나의 카테고리로 분류해주세요. "
+            "다음은 다양한 상품명 리스트입니다. 각 상품명을 '식품', '생활용품', '주류', '외식', '기타' 중 하나의 카테고리로 분류해주세요. "
             "카테고리화 결과는 '상품명: 카테고리' 형식으로 한 줄에 하나씩 작성해주세요.\n\n"
         )
         prompt += "\n".join(f"- {name}" for name in batch)
@@ -117,7 +117,7 @@ def categorize_products(product_names, batch_size=20):
                 if ':' in line:
                     product, category = line.split(':', 1)
                     product = product.strip().lstrip('- ').strip()
-                    category = category.strip() if category.strip() in ['식품', '생활용품', '주류', '기타'] else '기타'
+                    category = category.strip() if category.strip() in ['식품', '생활용품', '주류', '외식', '기타'] else '기타'
                     category_mapping[product] = category
                 else:
                     logging.warning(f"잘못된 형식의 라인: {line}")
@@ -154,7 +154,7 @@ def create_analysis_prompt(formatted_expenses, monthly_goal):
         "{\n"
         "    \"총 지출 금액\": \"100,000원\",\n"
         "    \"주요 지출 카테고리\": \"식품\",\n"
-        "    \"월간 예산 대비 초과 금액\": \"초과: 23,530원\",\n"
+        "    \"월간 예산 대비 초과 또는 절약 금액,\n"
         "    \"지출 패턴\": \"식품 및 주방용품에 주로 지출하며, 대부분 식자재 및 가공식품 구매\",\n"
         "    \"지출 절약을 위한 추천 사항\": \"식료품 구매 시 할인 행사 및 식자재 구매에 집중하여 예산을 절약하거나, 필요 이상의 구매를 줄여보세요\"\n"
         "}\n"
