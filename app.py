@@ -6,9 +6,14 @@ from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, verify_jwt_in_request, exceptions
 
 app = Flask(__name__)
 load_dotenv()
+
+# JWT 설정
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
+jwt = JWTManager(app)
 
 # 로깅 설정
 log_file = 'error.log'  # 로그 파일 경로
@@ -38,6 +43,19 @@ def log_request_info():
     app.logger.debug(f"Request Headers: {dict(request.headers)}")
     app.logger.debug(f"Request Body: {request.get_data()}")
 
+# JWT 오류 핸들러
+@jwt.unauthorized_loader
+def unauthorized_response(callback):
+    return jsonify({'error': 'Missing Authorization Header'}), 401
+
+@jwt.invalid_token_loader
+def invalid_token_callback(callback):
+    return jsonify({'error': 'Invalid JWT Token'}), 422
+
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_payload):
+    return jsonify({'error': 'Expired JWT Token'}), 401
+
 @app.route('/')
 def home():
     return "Hello, World!"
@@ -55,6 +73,7 @@ def handle_exception(e):
     return response
 
 @app.route('/api/v1/receipt/analyze', methods=['POST'])
+@jwt_required()
 def process_request():
     try:
         # 파일 유무 확인
@@ -103,6 +122,7 @@ def process_request():
         return jsonify({'error': 'An unexpected error occurred', 'details': str(err)}), 500
 
 @app.route('/api/v1/spending/analyze', methods=['POST'])
+@jwt_required()
 def analyze_spending():
     try:
         data = request.json
