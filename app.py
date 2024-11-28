@@ -14,9 +14,13 @@ load_dotenv()
 
 # JWT 설정
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
+app.config['JWT_ALGORITHM'] = 'HS512'  # 추가된 부분: JWT 알고리즘 설정
+
 if not app.config['JWT_SECRET_KEY']:
     raise ValueError("JWT_SECRET_KEY 환경 변수가 설정되지 않았습니다.")
 app.logger.debug(f"JWT_SECRET_KEY loaded: {app.config['JWT_SECRET_KEY']}")
+app.logger.debug(f"JWT_ALGORITHM set to: {app.config['JWT_ALGORITHM']}")  # 추가된 부분: 알고리즘 로그
+
 jwt_manager = JWTManager(app)
 
 # 로깅 설정
@@ -53,7 +57,7 @@ def log_request_info():
     app.logger.debug(f"Request Path: {request.path}")
     app.logger.debug(f"Request Headers: {dict(request.headers)}")
     app.logger.debug(f"Request Body: {request.get_data()}")
-
+    
     # 현재 요청된 엔드포인트 확인
     endpoint = request.endpoint
     if endpoint in protected_endpoints:
@@ -101,7 +105,10 @@ def home():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify(status='healthy'), 200
+    response = jsonify(status='healthy')
+    response.status_code = 200
+    app.logger.debug(f"Health check response: {response.get_data(as_text=True)}")
+    return response
 
 @app.errorhandler(Exception)
 def handle_exception(e):
