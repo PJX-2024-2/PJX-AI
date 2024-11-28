@@ -6,14 +6,18 @@ from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, verify_jwt_in_request, exceptions
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, exceptions
+import jwt  # JWT 디코딩을 위해 추가
 
 app = Flask(__name__)
 load_dotenv()
 
 # JWT 설정
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
-jwt = JWTManager(app)
+if not app.config['JWT_SECRET_KEY']:
+    raise ValueError("JWT_SECRET_KEY 환경 변수가 설정되지 않았습니다.")
+app.logger.debug(f"JWT_SECRET_KEY loaded: {app.config['JWT_SECRET_KEY']}")
+jwt_manager = JWTManager(app)
 
 # 로깅 설정
 log_file = 'error.log'  # 로그 파일 경로
@@ -43,17 +47,40 @@ def log_request_info():
     app.logger.debug(f"Request Headers: {dict(request.headers)}")
     app.logger.debug(f"Request Body: {request.get_data()}")
 
+    # Authorization 헤더에서 JWT 토큰 추출
+    auth_header = request.headers.get('Authorization', None)
+    if auth_header:
+        try:
+            token_type, token = auth_header.split()
+            if token_type.lower() != 'bearer':
+                app.logger.warning("Authorization header does not start with Bearer")
+            app.logger.debug(f"Received JWT Token: {token}")
+
+            # 토큰 디코딩 및 클레임 확인 (서명 검증 없이)
+            try:
+                decoded_token = jwt.decode(token, options={"verify_signature": False})
+                app.logger.debug(f"Decoded JWT Token Payload: {decoded_token}")
+            except jwt.DecodeError as e:
+                app.logger.error(f"Error decoding JWT Token: {e}")
+        except ValueError:
+            app.logger.warning("Authorization header is malformed")
+    else:
+        app.logger.debug("No Authorization header found")
+
 # JWT 오류 핸들러
-@jwt.unauthorized_loader
+@jwt_manager.unauthorized_loader
 def unauthorized_response(callback):
+    app.logger.error(f"Unauthorized: {callback}")
     return jsonify({'error': 'Missing Authorization Header'}), 401
 
-@jwt.invalid_token_loader
-def invalid_token_callback(callback):
-    return jsonify({'error': 'Invalid JWT Token'}), 422
+@jwt_manager.invalid_token_loader
+def invalid_token_callback(reason):
+    app.logger.error(f"Invalid JWT Token: {reason}")
+    return jsonify({'error': 'Invalid JWT Token', 'details': reason}), 422
 
-@jwt.expired_token_loader
+@jwt_manager.expired_token_loader
 def expired_token_callback(jwt_header, jwt_payload):
+    app.logger.warning(f"Expired JWT Token: {jwt_payload}")
     return jsonify({'error': 'Expired JWT Token'}), 401
 
 @app.route('/')
@@ -125,6 +152,9 @@ def process_request():
 @jwt_required()
 def analyze_spending():
     try:
+        current_user = get_jwt_identity()
+        app.logger.debug(f"Current User ID from JWT: {current_user}")
+
         data = request.json
         user_id = data.get("user_id")
 
