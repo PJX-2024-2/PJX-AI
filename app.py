@@ -42,30 +42,42 @@ cors = CORS(app, resources={
     }
 }, supports_credentials=True)
 
+# 보호된 엔드포인트 리스트
+protected_endpoints = [
+    'process_request',
+    'analyze_spending'
+]
+
 @app.before_request
 def log_request_info():
+    app.logger.debug(f"Request Path: {request.path}")
     app.logger.debug(f"Request Headers: {dict(request.headers)}")
     app.logger.debug(f"Request Body: {request.get_data()}")
 
-    # Authorization 헤더에서 JWT 토큰 추출
-    auth_header = request.headers.get('Authorization', None)
-    if auth_header:
-        try:
-            token_type, token = auth_header.split()
-            if token_type.lower() != 'bearer':
-                app.logger.warning("Authorization header does not start with Bearer")
-            app.logger.debug(f"Received JWT Token: {token}")
-
-            # 토큰 디코딩 및 클레임 확인 (서명 검증 없이)
+    # 현재 요청된 엔드포인트 확인
+    endpoint = request.endpoint
+    if endpoint in protected_endpoints:
+        # Authorization 헤더에서 JWT 토큰 추출
+        auth_header = request.headers.get('Authorization', None)
+        if auth_header:
             try:
-                decoded_token = jwt.decode(token, options={"verify_signature": False})
-                app.logger.debug(f"Decoded JWT Token Payload: {decoded_token}")
-            except jwt.DecodeError as e:
-                app.logger.error(f"Error decoding JWT Token: {e}")
-        except ValueError:
-            app.logger.warning("Authorization header is malformed")
+                token_type, token = auth_header.split()
+                if token_type.lower() != 'bearer':
+                    app.logger.warning("Authorization header does not start with Bearer")
+                app.logger.debug(f"Received JWT Token: {token}")
+
+                # 토큰 디코딩 및 클레임 확인 (서명 검증 없이)
+                try:
+                    decoded_token = jwt.decode(token, options={"verify_signature": False})
+                    app.logger.debug(f"Decoded JWT Token Payload: {decoded_token}")
+                except jwt.DecodeError as e:
+                    app.logger.error(f"Error decoding JWT Token: {e}")
+            except ValueError:
+                app.logger.warning("Authorization header is malformed")
+        else:
+            app.logger.debug("No Authorization header found for protected endpoint")
     else:
-        app.logger.debug("No Authorization header found")
+        app.logger.debug("Unprotected endpoint accessed; skipping JWT token processing")
 
 # JWT 오류 핸들러
 @jwt_manager.unauthorized_loader
