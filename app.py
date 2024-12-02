@@ -41,7 +41,7 @@ cors = CORS(app, resources={
     r"/*": {
         "origins": [
             "http://localhost:5173",
-            "https://pjx-client-4bsx.vercel.app"
+            "https://pjx-client.vercel.app"
         ]
     }
 }, supports_credentials=True)
