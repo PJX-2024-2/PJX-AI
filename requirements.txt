@@ -8,3 +8,4 @@ openai
 pandas
 opencv-python
 numpy
+Flask-JWT-Extended

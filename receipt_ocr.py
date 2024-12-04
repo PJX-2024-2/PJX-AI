@@ -26,45 +26,49 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def validate_image_path(image_path):
+    # 이미지 경로 및 형식 검증
     if not os.path.isfile(image_path):
-        logger.error(f"파일이 존재하지 않습니다: {image_path}")
+        logger.error(f"File does not exist: {image_path}")
         return False
     mime_type, _ = mimetypes.guess_type(image_path)
     if mime_type not in ['image/jpeg', 'image/png', 'image/jpg']:
-        logger.error(f"지원되지 않는 이미지 형식입니다: {image_path} (MIME type: {mime_type})")
+        logger.error(f"Unsupported image format: {image_path} (MIME type: {mime_type})")
         return False
     return True
 
 def preprocess_receipt_image(image_path):
-    # 1. 이미지 로드
+    """
+    이미지 전처리
+    """
+    # 이미지 로드
     image = cv2.imread(image_path)
     if image is None:
-        logger.error(f"이미지를 {image_path}에서 불러올 수 없습니다.")
+        logger.error(f"Failed to load image from: {image_path}")
         return None
 
     # 원본 이미지 복사
     original = image.copy()
 
-    # 2. 그레이스케일 변환
+    # 그레이스케일 변환
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    # 3. 모폴리지 닫기 연산으로 노이즈 제거 및 그림자 완화
+    # 모폴리지 닫기 연산으로 노이즈 제거 및 그림자 완화
     img_height, img_width = gray.shape
     kernel_size = max(5, int(img_width * 0.02))
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
     closed = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-    # 4. 그림자 제거를 위한 배경 추정 및 차감
+    # 그림자 제거를 위한 배경 추정 및 차감
     background = cv2.GaussianBlur(closed, (15, 15), 0)
     diff = cv2.absdiff(gray, background)
 
-    # 5. 정규화하여 명암 대비 향상
+    # 정규화하여 명암 대비 향상
     norm = cv2.normalize(diff, None, 0, 255, cv2.NORM_MINMAX)
 
-    # 6. 노이즈 제거
+    # 노이즈 제거
     blurred = cv2.GaussianBlur(norm, (5, 5), 0)
 
-    # 7. 이진화 (Otsu Thresholding 고정)
+    # 이진화 (Otsu Thresholding)
     _, thresh = cv2.threshold(
         blurred,
         0,
@@ -72,7 +76,7 @@ def preprocess_receipt_image(image_path):
         cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
 
-    # 8. 팽창을 통해 텍스트 선명화
+    # 팽창을 통해 텍스트 선명화
     kernel_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
     processed = cv2.dilate(thresh, kernel_dilate, iterations=1)  
 
@@ -80,18 +84,7 @@ def preprocess_receipt_image(image_path):
 
 def perform_ocr(api_url, secret_key, image_info, session, timeout=20):
     """
-    OCR API를 호출하여 이미지에서 텍스트를 추출합니다.
-
-    Parameters:
-    - api_url: OCR API의 URL
-    - secret_key: OCR API의 시크릿 키
-    - image_info: (image_type, image_path) 튜플
-    - session: requests 세션 객체
-    - timeout: 요청 타임아웃 시간
-
-    Returns:
-    - image_type: 이미지 유형 (예: '영수증1')
-    - text_results: 추출된 텍스트
+    OCR API를 호출하여 이미지에서 텍스트를 추출
     """
     image_type, image_path = image_info
     if not validate_image_path(image_path):
@@ -101,13 +94,13 @@ def perform_ocr(api_url, secret_key, image_info, session, timeout=20):
         # 이미지 전처리
         processed_image = preprocess_receipt_image(image_path)
         if processed_image is None:
-            logger.error(f"전처리 실패: {image_path}")
+            logger.error(f"Preprocessing failed for: {image_path}")
             return image_type, ""
 
         # 전처리된 이미지를 메모리 버퍼로 인코딩
         success, encoded_image = cv2.imencode('.png', processed_image)
         if not success:
-            logger.error(f"이미지 인코딩 실패: {image_path}")
+            logger.error(f"Image encoding failed for: {image_path}")
             return image_type, ""
 
         # 인코딩된 이미지를 바이트로 변환
@@ -139,21 +132,23 @@ def perform_ocr(api_url, secret_key, image_info, session, timeout=20):
                 for image in ocr_result.get('images', [])
                 for field in image.get('fields', [])
             ])
-            logger.info(f"OCR 성공: {image_type}에서 텍스트 추출 완료.")
+            logger.info(f"OCR succeeded for: {image_type}")
             return image_type, text_results
         else:
-            logger.error(f"OCR 요청 실패: {image_type}, 상태 코드 {response.status_code}, 응답 내용: {response.text}")
+            logger.error(f"OCR request failed for: {image_type}, Status Code: {response.status_code}, Response: {response.text}")
             return image_type, ""
     except requests.exceptions.Timeout:
-        logger.error(f"OCR 요청 타임아웃: {image_type}")
+        logger.error(f"OCR request timeout for: {image_type}")
     except requests.exceptions.RequestException as e:
-        logger.error(f"OCR 요청 중 예외 발생: {image_type}, 예외: {e}")
+        logger.error(f"OCR request exception for: {image_type}, Exception: {e}")
     except Exception as e:
-        logger.error(f"OCR 처리 중 예외 발생: {image_type}, 예외: {e}")
+        logger.error(f"Unexpected exception during OCR processing for: {image_type}, Exception: {e}")
     return image_type, ""
 
 def perform_summarization(api_url, api_key, prompt, session, timeout=25):
-
+    """
+    OpenAI API를 호출하여 텍스트 요약을 수행
+    """
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {api_key}',
@@ -173,53 +168,55 @@ def perform_summarization(api_url, api_key, prompt, session, timeout=25):
         if response.status_code == 200:
             result = response.json()
             output = result['choices'][0]['message']['content']
-            logger.info("OpenAI 요약 성공.")
+            logger.info("Summarization succeeded.")
             return output.strip()
         else:
-            logger.error(f"OpenAI API 요청 실패: 상태 코드 {response.status_code}, 응답 내용: {response.text}")
+            logger.error(f"Summarization request failed. Status Code: {response.status_code}, Response: {response.text}")
             return None
     except requests.exceptions.Timeout:
-        logger.error("OpenAI API 요청 타임아웃.")
+        logger.error("Summarization request timeout.")
     except requests.exceptions.RequestException as e:
-        logger.error(f"OpenAI API 요청 중 예외 발생: {e}")
+        logger.error(f"Summarization request exception: {e}")
     except Exception as e:
-        logger.error(f"OpenAI 요약 처리 중 예외 발생: {e}")
+        logger.error(f"Unexpected exception during summarization: {e}")
     return None
 
 def main(*image_paths):
-
+    """
+    OCR 및 요약 작업 수행
+    """
     # OCR API 정보
     ocr_api_url = os.getenv('OCR_API_URL')
     if not ocr_api_url:
-        logger.error("환경 변수 OCR_API_URL가 설정되지 않았습니다.")
+        logger.error("Environment variable OCR_API_URL is not set.")
         sys.exit(1)
     secret_key = os.getenv('SECRET_KEY')
 
     if not secret_key:
-        logger.error("환경 변수 SECRET_KEY가 설정되지 않았습니다.")
+        logger.error("Environment variable SECRET_KEY is not set.")
         sys.exit(1)
 
     # OpenAI API 정보
     openai_api_url = os.getenv('OPENAI_API_URL')
     if not openai_api_url:
-        logger.error("환경 변수 OPENAI_API_URL가 설정되지 않았습니다.")
+        logger.error("Environment variable OPENAI_API_URL is not set.")
         sys.exit(1)
     openai_api_key = os.getenv("OPENAI_API_KEY")
     if not openai_api_key:
-        logger.error("환경 변수 OPENAI_API_KEY가 설정되지 않았습니다.")
+        logger.error("Environment variable OPENAI_API_KEY is not set.")
         sys.exit(1)
 
     # 이미지 경로들 검증
     valid_image_paths = []
     for i, path in enumerate(image_paths):
-        image_type = f'영수증{i+1}'
+        image_type = f'Receipt{i+1}'
         if validate_image_path(path):
             valid_image_paths.append((image_type, path))
         else:
-            logger.warning(f"유효하지 않은 이미지 경로: {path}. 이 이미지는 건너뜁니다.")
+            logger.warning(f"Invalid image path: {path}. Skipping this file.")
 
     if not valid_image_paths:
-        logger.error("유효한 이미지 파일이 없습니다.")
+        logger.error("No valid image files provided.")
         sys.exit(1)
 
     # 세션 설정
@@ -239,7 +236,7 @@ def main(*image_paths):
     # OCR 결과 결합
     combined_text = "\n".join(extracted_texts.values())
     if not combined_text.strip():
-        logger.error("OCR 결과가 비어 있습니다.")
+        logger.error("OCR result is empty.")
         sys.exit(1)
 
     # 프롬프트 설정
@@ -262,7 +259,7 @@ def main(*image_paths):
     if summary_result:
         print(summary_result)
     else:
-        logger.error("요약 결과를 얻지 못했습니다.")
+        logger.error("Failed to retrieve summary result.")
         sys.exit(1)
 
 if __name__ == '__main__':
@@ -270,7 +267,7 @@ if __name__ == '__main__':
     num_images = len(image_file_paths)
     logger.debug(f"Received {num_images} image(s): {image_file_paths}")
     if not (1 <= num_images <= 3):
-        logger.error("이미지 파일 최소 1개, 최대 3개를 입력해야 합니다.")
+        logger.error("You must provide at least 1 and at most 3 image files.")
         sys.exit(1)
 
     main(*image_file_paths)

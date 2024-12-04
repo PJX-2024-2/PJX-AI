@@ -7,19 +7,18 @@ from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, exceptions
-import jwt  # JWT 디코딩을 위해 추가
 
 app = Flask(__name__)
 load_dotenv()
 
 # JWT 설정
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
-app.config['JWT_ALGORITHM'] = 'HS512'  # 추가된 부분: JWT 알고리즘 설정
+app.config['JWT_ALGORITHM'] = 'HS512'  # JWT 알고리즘 설정
 
 if not app.config['JWT_SECRET_KEY']:
-    raise ValueError("JWT_SECRET_KEY 환경 변수가 설정되지 않았습니다.")
+    raise ValueError("JWT_SECRET_KEY environment variable is not set.")
 app.logger.debug(f"JWT_SECRET_KEY loaded: {app.config['JWT_SECRET_KEY']}")
-app.logger.debug(f"JWT_ALGORITHM set to: {app.config['JWT_ALGORITHM']}")  # 추가된 부분: 알고리즘 로그
+app.logger.debug(f"JWT_ALGORITHM set to: {app.config['JWT_ALGORITHM']}")
 
 jwt_manager = JWTManager(app)
 
@@ -36,7 +35,7 @@ file_handler.setFormatter(formatter)
 app.logger.addHandler(file_handler)
 app.logger.setLevel(logging.DEBUG)
 
-# CORS 설정: 두 URL을 허용
+# CORS 설정: 허용할 URL 정의
 cors = CORS(app, resources={
     r"/*": {
         "origins": [
@@ -61,32 +60,14 @@ def log_request_info():
     # 현재 요청된 엔드포인트 확인
     endpoint = request.endpoint
     if endpoint in protected_endpoints:
-        # Authorization 헤더에서 JWT 토큰 추출
-        auth_header = request.headers.get('Authorization', None)
-        if auth_header:
-            try:
-                token_type, token = auth_header.split()
-                if token_type.lower() != 'bearer':
-                    app.logger.warning("Authorization header does not start with Bearer")
-                app.logger.debug(f"Received JWT Token: {token}")
-
-                # 토큰 디코딩 및 클레임 확인 (서명 검증 없이)
-                try:
-                    decoded_token = jwt.decode(token, options={"verify_signature": False})
-                    app.logger.debug(f"Decoded JWT Token Payload: {decoded_token}")
-                except jwt.DecodeError as e:
-                    app.logger.error(f"Error decoding JWT Token: {e}")
-            except ValueError:
-                app.logger.warning("Authorization header is malformed")
-        else:
-            app.logger.debug("No Authorization header found for protected endpoint")
+        app.logger.debug("Protected endpoint accessed; JWT verification applied.")
     else:
-        app.logger.debug("Unprotected endpoint accessed; skipping JWT token processing")
+        app.logger.debug("Unprotected endpoint accessed; skipping JWT verification.")
 
 # JWT 오류 핸들러
 @jwt_manager.unauthorized_loader
 def unauthorized_response(callback):
-    app.logger.error(f"Unauthorized: {callback}")
+    app.logger.error(f"Unauthorized access: {callback}")
     return jsonify({'error': 'Missing Authorization Header'}), 401
 
 @jwt_manager.invalid_token_loader
@@ -124,30 +105,31 @@ def process_request():
     try:
         # 파일 유무 확인
         if 'files' not in request.files:
-            app.logger.error('No files part in the request')
+            app.logger.error('No files part in the request.')
             return jsonify({'error': 'No files part'}), 400
 
         # 파일 리스트 확인
         files = request.files.getlist('files')
         if not files:
-            app.logger.error('No selected files in the request')
+            app.logger.error('No selected files in the request.')
             return jsonify({'error': 'No selected files'}), 400
 
         # 파일 개수 제한 확인
         if len(files) > 3:
-            app.logger.error('More than 3 files uploaded')
+            app.logger.error('More than 3 files uploaded.')
             return jsonify({'error': 'Maximum 3 files allowed'}), 400
 
         image_paths = {}
         temp_dir = '/tmp'
 
+        # 파일 저장 및 경로 지정
         for idx, file in enumerate(files, start=1):
             if file.filename == '':
-                app.logger.error('One of the files has no filename')
+                app.logger.error('One of the files has no filename.')
                 return jsonify({'error': 'One of the files has no filename'}), 400
             file_path = os.path.join(temp_dir, f'image_{idx}_{file.filename}')
             file.save(file_path)
-            image_type = f'영수증{idx}'
+            image_type = f'Receipt{idx}'
             image_paths[image_type] = file_path
 
         # receipt_ocr.py 실행, 입력 이미지 경로 전달
@@ -171,15 +153,17 @@ def process_request():
 @jwt_required()
 def analyze_spending():
     try:
+        # JWT 토큰에서 사용자 ID 가져오기
         current_user = get_jwt_identity()
         app.logger.debug(f"Current User ID from JWT: {current_user}")
 
+        # 요청 데이터 가져오기
         data = request.json
         user_id = data.get("user_id")
 
         if not user_id:
-            app.logger.error("필수 파라미터가 누락되었습니다.")
-            return jsonify({'error': '필수 파라미터가 누락되었습니다. user_id를 확인하세요.'}), 400
+            app.logger.error("Required parameter is missing: user_id.")
+            return jsonify({'error': 'Required parameter is missing: user_id.'}), 400
 
         # 현재 날짜 기준 월 계산
         current_month = datetime.now().month
